@@ -1,6 +1,6 @@
 // MIT License
 //
-// Copyright (c) 2021 Avery Girven
+// Copyright (c) 2022 Avery Girven
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -21,6 +21,7 @@
 // SOFTWARE.
 #pragma once
 #include <memory>
+#include <chrono>
 
 #include "Aria/Aria.h"
 #include <Aria/ArRobotConfigPacketReader.h> // todo remove after ArRobotConfig implemented in AriaCoda
@@ -36,6 +37,12 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include "nav_msgs/msg/odometry.hpp"
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include "geometry_msgs/msg/vector3_stamped.hpp"
+#include "tf2/transform_datatypes.h"
+#include <tf2_ros/transform_broadcaster.h>
+
 
 namespace Pioneer
 {
@@ -109,6 +116,10 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr voltage_pub;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr motors_state_pub;
   rclcpp::Publisher<rosaria_msgs::msg::BumperState>::SharedPtr bumper_pub;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub;
+
+  // transformation
+  std::unique_ptr<tf2_ros::TransformBroadcaster> odom_tf_broadcaster;
 
   // services
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr motor_service;
@@ -120,13 +131,25 @@ private:
   rclcpp::TimerBase::SharedPtr motors_state_publish_timer;
   rclcpp::TimerBase::SharedPtr bumper_publish_timer;
   rclcpp::TimerBase::SharedPtr sonar_publish_timer;
+  rclcpp::TimerBase::SharedPtr odom_publish_timer;
 
   // Aria sdk attributes
   ArRobot *robot;
   ArRobotConnector *robotConnector;
+  ArPose pos;
 
   // node parameters
   bool publish_sonar{true};
   bool published_motor_state{false};
+  std::string port{"/dev/ttyUSB0"};
+  std::string odom_frame_id{};
+  std::string base_frame_id{};
+  std::string bumper_frame_id{};
+  std::string sonar_frame_id{};
+  int battery_voltage_update_rate{0};
+  int motor_state_update_rate{0};
+  int bumper_publish_rate{0};
+  int sonar_publish_rate{0};
+  int odom_publish_rate{0};
 };
 }

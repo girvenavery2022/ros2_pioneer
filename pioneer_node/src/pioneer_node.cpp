@@ -1,6 +1,8 @@
 #include <memory>
 
+#include "pioneer_node/utility/tf2_helper.hpp"
 #include "pioneer_node/pioneer_node.hpp"
+
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 using std::placeholders::_2;
@@ -10,6 +12,16 @@ namespace Pioneer
 Pioneer::Pioneer(rclcpp::NodeOptions options)
 : Node("Pioneer_node", options)
 {
+  odom_frame_id = this->declare_parameter("odom_frame_id", "odom");
+  base_frame_id = this->declare_parameter("base_frame_id", "base_footprint");
+  sonar_frame_id = this->declare_parameter("sonar_frame_id", "sonar_link");
+  port = this->declare_parameter("port", "/dev/ttyUSB0");
+  odom_publish_rate = this->declare_parameter("odom_update_rate", 20);
+  battery_voltage_update_rate = this->declare_parameter("battery_voltage_update_rate", 2);
+  motor_state_update_rate = this->declare_parameter("motor_state_update_rate", 10);
+  bumper_publish_rate = this->declare_parameter("bumper_publish_rate", 10);
+  sonar_publish_rate = this->declare_parameter("sonar_publish_rate", 20);
+
   subscription_ = this->create_subscription<geometry_msgs::msg::Twist>(
     "/cmd_vel", 1, std::bind(&Pioneer::cmdvel_callback, this, std::placeholders::_1));
   
@@ -17,22 +29,34 @@ Pioneer::Pioneer(rclcpp::NodeOptions options)
   sonar_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("/sonar", 10);
   motors_state_pub = this->create_publisher<std_msgs::msg::Bool>("/motor_state", 10);
   bumper_pub = this->create_publisher<rosaria_msgs::msg::BumperState>("/bumpers", 10);
+  odom_pub = this->create_publisher<nav_msgs::msg::Odometry>("/odom", 10);
 
   motor_service = this->create_service<std_srvs::srv::SetBool>("trigger_motors", 
     std::bind(&Pioneer::trigger_motors, this, std::placeholders::_1, std::placeholders::_2));
 
+  int battery_publish_time = (1/battery_voltage_update_rate)*1000;
   battery_voltage_publish_timer = this->create_wall_timer(
-    500ms, std::bind(&Pioneer::battery_voltage_publisher, this));
+    std::chrono::milliseconds(battery_publish_time), std::bind(&Pioneer::battery_voltage_publisher, this));
 
+  int bumper_publish_time = (1/bumper_publish_rate)*1000;
   bumper_publish_timer = this->create_wall_timer(
-    100ms, std::bind(&Pioneer::bumper_publisher, this));
+    std::chrono::milliseconds(bumper_publish_time), std::bind(&Pioneer::bumper_publisher, this));
 
+  int sonar_publish_time = (1/sonar_publish_rate)*1000;
   sonar_publish_timer = this->create_wall_timer(
-    50ms, std::bind(&Pioneer::sonar_publisher, this));
+    std::chrono::milliseconds(sonar_publish_time), std::bind(&Pioneer::sonar_publisher, this));
 
+  int odom_publish_time = (1/odom_publish_rate)*1000;
+  odom_publish_timer = this->create_wall_timer(
+    std::chrono::milliseconds(odom_publish_time), std::bind(&Pioneer::odometry_publisher, this));
+
+  int motor_state_publish_time = (1/motor_state_update_rate)*1000;
   motors_state_publish_timer = this->create_wall_timer(
-    100ms, std::bind(&Pioneer::motor_state_publisher, this));
+    std::chrono::milliseconds(motor_state_publish_time), std::bind(&Pioneer::motor_state_publisher, this));
+
+  odom_tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 }
+
 
 void Pioneer::connect()
 {
@@ -40,7 +64,7 @@ void Pioneer::connect()
   ArArgumentBuilder *args = new ArArgumentBuilder(); //  never freed
   ArArgumentParser *argparser = new ArArgumentParser(args); // Warning never freed
   argparser->loadDefaultArguments(); 
-  args->add("-robotPort %s", "/dev/ttyUSB0"); // pass robot's serial port to Aria
+  args->add("-robotPort %s", port); // pass robot's serial port to Aria
   args->add("-robotBaud %d", 9600);
 
   // Connect to the robot, get some initial data from it such as type and name,
@@ -78,6 +102,7 @@ void Pioneer::setup()
 
   // Run ArRobot background processing thread
   robot->runAsync(true);
+  robot->setAbsoluteMaxTransNegVel(-1200);
 }
 
 void Pioneer::battery_voltage_publisher()
@@ -113,14 +138,54 @@ void Pioneer::sonar_publisher()
     }
     pcl::toROSMsg(cloud, sonar_cloud);
     sonar_cloud.header.stamp = this->get_clock()->now();
-    sonar_cloud.header.frame_id = "sonar_link";
+    sonar_cloud.header.frame_id = sonar_frame_id;
     sonar_pub->publish(sonar_cloud);
   }
 }
 
+// this is up next to finish 
 void Pioneer::odometry_publisher()
 {
+  /*
+  pos = robot->getPose();
+  nav_msgs::msg::Odometry odom;
 
+  //odom.pose.pose
+  geometry_msgs::msg::Vector3Stamped ros_vector;
+  tf2::TimePoint time_point = tf2::TimePoint(std::chrono::nanoseconds(this->get_clock()->now().nanoseconds()));
+  tf2::Stamped<tf2::Vector3> Vector(tf2::Vector3(pos.getX()/1000, pos.getY()/1000, 0), time_point, odom_frame_id);
+  tf2::convert(Vector, ros_vector);
+
+  odom.pose.pose.position.x = ros_vector.vector.x;
+  odom.pose.pose.position.y = ros_vector.vector.y;
+  odom.pose.pose.position.z = ros_vector.vector.z;
+  odom.pose.pose.orientation = createQuaternionMsgFromYaw(pos.getTh()*M_PI/180);
+
+  odom.twist.twist.linear.x = robot->getVel()/1000;
+  odom.twist.twist.linear.y = robot->getLatVel()/1000;
+  odom.twist.twist.angular.z = robot->getRotVel();
+
+  odom.header.stamp = this->get_clock()->now();
+  odom.header.frame_id = odom_frame_id;
+  odom.child_frame_id = base_frame_id;
+
+  // Send the transformation
+  odom_pub->publish(odom);
+  odom_frame_id = "odom";
+  base_frame_id = "base_footprint";
+
+  geometry_msgs::msg::TransformStamped odom_trans;
+  odom_trans.header.stamp = this->get_clock()->now();
+  odom_trans.header.frame_id = odom_frame_id;
+  odom_trans.child_frame_id = base_frame_id;
+  
+  odom_trans.transform.translation.x = robot->getX()/1000;
+  odom_trans.transform.translation.y = robot->getY()/1000;
+  odom_trans.transform.translation.z = 0.0;
+  odom_trans.transform.rotation = createQuaternionMsgFromYaw(pos.getTh()*M_PI/180);
+
+  odom_tf_broadcaster->sendTransform(odom_trans);
+  */
 }
 
 void Pioneer::bumper_publisher()
@@ -129,8 +194,6 @@ void Pioneer::bumper_publisher()
   int stall = robot->getStallValue();
   unsigned char front_bumpers = (unsigned char)(stall >> 8);
   unsigned char rear_bumpers = (unsigned char)(stall);
-
-  bumpers.header.frame_id = "bumper_link";
 
   std::stringstream bumper_info(std::stringstream::out);
   // Bit 0 is for stall, next bits are for bumpers (leftmost is LSB)
@@ -144,6 +207,7 @@ void Pioneer::bumper_publisher()
   {
     bumpers.rear_bumpers[i] = (rear_bumpers & (1 << (numRearBumpers-i))) == 0 ? 0 : 1;
   }
+  bumpers.header.frame_id = bumper_frame_id;
   bumpers.header.stamp = this->get_clock()->now();
   bumper_pub->publish(bumpers);
 }
