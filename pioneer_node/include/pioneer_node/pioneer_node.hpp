@@ -19,6 +19,7 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
+
 #pragma once
 #include <memory>
 #include <chrono>
@@ -40,6 +41,7 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include "geometry_msgs/msg/vector3_stamped.hpp"
+#include <geometry_msgs/msg/transform_stamped.hpp>
 #include "tf2/transform_datatypes.h"
 #include <tf2_ros/transform_broadcaster.h>
 
@@ -119,7 +121,7 @@ private:
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_pub;
 
   // transformation
-  std::unique_ptr<tf2_ros::TransformBroadcaster> odom_tf_broadcaster;
+  std::shared_ptr<tf2_ros::TransformBroadcaster> odom_tf_broadcaster;
 
   // services
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr motor_service;
@@ -140,6 +142,7 @@ private:
 
   // node parameters
   bool publish_sonar{true};
+  bool publish_bumper{true};
   bool published_motor_state{false};
   std::string port{"/dev/ttyUSB0"};
   std::string odom_frame_id{};

@@ -1,2 +1,16 @@
 pioneer_node:
   ros__parameters:
+    use_sim_time: true
+    string port: "/dev/ttyUSB0"
+    odom_frame_id: "odom"
+    base_frame_id: "base_footprint"
+    bumper_frame_id: "bumper_link"
+    sonar_frame_id: "sonar_link"
+    battery_voltage_update_rate: 10 # units is hertz
+    motor_state_update_rate: 5      # units is hertz
+    bumper_publish_rate: 10         # units is hertz
+    sonar_publish_rate: 20          # units is hertz
+    odom_publish_rate: 20           # units is hertz
+    publish_sonar: true
+    publish_bumpers: true
+    published_motor_state: true

@@ -40,6 +40,8 @@ def generate_launch_description():
 
     joy_config = os.path.join(pkg_pioneer, 'config/',
                               'xbox.config.yaml')
+    robot_config = os.path.join(pkg_pioneer, 'config/',
+                              'robot.yaml')
 
     joy_with_teleop_twist = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(

@@ -21,6 +21,8 @@ Pioneer::Pioneer(rclcpp::NodeOptions options)
   motor_state_update_rate = this->declare_parameter("motor_state_update_rate", 10);
   bumper_publish_rate = this->declare_parameter("bumper_publish_rate", 10);
   sonar_publish_rate = this->declare_parameter("sonar_publish_rate", 20);
+  publish_sonar = this->declare_parameter("publish_sonar", true);
+  published_motor_state = this->declare_parameter("publish_motor_state", true);
 
   subscription_ = this->create_subscription<geometry_msgs::msg::Twist>(
     "/cmd_vel", 1, std::bind(&Pioneer::cmdvel_callback, this, std::placeholders::_1));
@@ -54,9 +56,8 @@ Pioneer::Pioneer(rclcpp::NodeOptions options)
   motors_state_publish_timer = this->create_wall_timer(
     std::chrono::milliseconds(motor_state_publish_time), std::bind(&Pioneer::motor_state_publisher, this));
 
-  odom_tf_broadcaster = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+  odom_tf_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(*this);
 }
-
 
 void Pioneer::connect()
 {
@@ -146,10 +147,10 @@ void Pioneer::sonar_publisher()
 // this is up next to finish 
 void Pioneer::odometry_publisher()
 {
-  /*
   pos = robot->getPose();
   nav_msgs::msg::Odometry odom;
-
+  
+  /*
   //odom.pose.pose
   geometry_msgs::msg::Vector3Stamped ros_vector;
   tf2::TimePoint time_point = tf2::TimePoint(std::chrono::nanoseconds(this->get_clock()->now().nanoseconds()));
@@ -160,7 +161,7 @@ void Pioneer::odometry_publisher()
   odom.pose.pose.position.y = ros_vector.vector.y;
   odom.pose.pose.position.z = ros_vector.vector.z;
   odom.pose.pose.orientation = createQuaternionMsgFromYaw(pos.getTh()*M_PI/180);
-
+*/
   odom.twist.twist.linear.x = robot->getVel()/1000;
   odom.twist.twist.linear.y = robot->getLatVel()/1000;
   odom.twist.twist.angular.z = robot->getRotVel();
@@ -171,8 +172,6 @@ void Pioneer::odometry_publisher()
 
   // Send the transformation
   odom_pub->publish(odom);
-  odom_frame_id = "odom";
-  base_frame_id = "base_footprint";
 
   geometry_msgs::msg::TransformStamped odom_trans;
   odom_trans.header.stamp = this->get_clock()->now();
@@ -185,7 +184,6 @@ void Pioneer::odometry_publisher()
   odom_trans.transform.rotation = createQuaternionMsgFromYaw(pos.getTh()*M_PI/180);
 
   odom_tf_broadcaster->sendTransform(odom_trans);
-  */
 }
 
 void Pioneer::bumper_publisher()
@@ -203,7 +201,7 @@ void Pioneer::bumper_publisher()
   }
   // Rear bumpers have reverse order (rightmost is LSB)
   unsigned int numRearBumpers = robot->getNumRearBumpers();
-  for (unsigned int i=0; i<numRearBumpers; i++)
+  for (unsigned int i=0; i < numRearBumpers; i++)
   {
     bumpers.rear_bumpers[i] = (rear_bumpers & (1 << (numRearBumpers-i))) == 0 ? 0 : 1;
   }
@@ -247,7 +245,7 @@ void Pioneer::trigger_motors(const std::shared_ptr<std_srvs::srv::SetBool::Reque
     if(!robot->areMotorsEnabled())
     {
       response->success = true;
-      response->message = "Robot Motors are disabled!";
+      response->message = "Robot Motors are Disabled!";
     }
     else
     {
